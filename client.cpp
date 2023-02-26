@@ -1,16 +1,13 @@
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <stdio.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <string.h>
-#include <stdlib.h>
-#include <fcntl.h>
-#include <sys/shm.h>
-#include <iostream>
-using namespace std;
+#include "client.h"
 
+client::client(int port,string ip):server_port(port),server_ip(ip){}
+client::~client(){
+    close(sock);
+}
+
+void client::run(){
+    sock=socket(AF_INET,SOCK)
+}
 int main()
 {
     //定义sockfd

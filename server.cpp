@@ -1,5 +1,7 @@
 #include "server.h"
 
+vector<bool> server::sock_arr(10000,false);
+
 server::server(int port,string ip):server_port(port),server_ip(ip){}
 
 server::~server(){
@@ -8,6 +10,7 @@ server::~server(){
     }
     close(server_sockfd);
 }
+
 
 
 void server::run(){

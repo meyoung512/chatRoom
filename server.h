@@ -3,7 +3,6 @@
 
 #include "global.h"
 
-using namespace std;
 
 class server{
     private:
@@ -12,12 +11,14 @@ class server{
     string server_ip;
     // vector<int> sock_arr;
     static vector<bool> sock_arr;
+    static unordered_map<string,int> name_sock_map;
+    static pthread_mutex_t name_sock_mutx;
     public:
     server(int port,string ip);
     ~server();
     void run();
     static void RecvMsg(int conn);
-    static void HandleRequest(int conn,string str);
+    static void HandleRequest(int conn,string str,tuple<bool,string,string,int>& info);
 };
 
 #endif

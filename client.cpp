@@ -35,7 +35,7 @@ void client::run(){
 }
 
 void client::SendMsg(int conn){
-    char sendbuf[100];
+    // char sendbuf[100];
     while(1){
         // memset(sendbuf,0,sizeof(sendbuf));
         // cin>>sendbuf;
@@ -45,9 +45,18 @@ void client::SendMsg(int conn){
         // }
         string str;
         cin>>str;
-        str="content:"+str;
-        int ret=send(conn,str.c_str(),str.length(),0);
-        if(str=="content:exit"||ret<=0){
+        // str="content:"+str;
+        // int ret=send(conn,str.c_str(),str.length(),0);
+        // if(str=="content:exit"||ret<=0){
+        //     break;
+        // }
+        if(conn>0){
+            str="content:"+str;
+        }else if(conn<0){
+            str="gr_message:"+str;
+        }
+        int ret=send(abs(conn),str.c_str(),str.length(),0);
+        if(str=="content:exit"||ret<0){
             break;
         }
     }
@@ -81,13 +90,15 @@ void client::HandleClient(int conn){
     cout<<"|                  |\n";
     cout<<" ------------------ \n\n";
 
+    //开始处理注册、登录事件
     while(1){
         if(if_login)
            break;
         cin>>choice;
-        if(choice==0){
+        if(choice==0)
             break;
-        }else if(choice==2){
+        //注册
+        else if(choice==2){
             cout<<"注册的用户名:";
             cin>>name;
             while(1){
@@ -106,7 +117,9 @@ void client::HandleClient(int conn){
             send(conn,str.c_str(),str.length(),0);
             cout<<"注册成功！\n";
             cout<<"\n继续输入你要的选项:";
-        }else if(choice==1&&!if_login){
+        }
+        //登录
+        else if(choice==1&&!if_login){
             while(1){
                 cout<<"用户名:";
                 cin>>name;
@@ -125,13 +138,14 @@ void client::HandleClient(int conn){
                     login_name=name;
                     cout<<"登录成功\n\n";
                     break;
-                }else{
-                    cout<<"密码或用户名错误！\n\n";
                 }
+                else
+                    cout<<"密码或用户名错误！\n\n";
             }
         }
     }
-     while(if_login&&1){
+    //登录成功
+    while(if_login&&1){
         if(if_login){
             system("clear");
             cout<<"        欢迎回来,"<<login_name<<endl;
@@ -148,7 +162,7 @@ void client::HandleClient(int conn){
         if(choice==0)
             break;
         //私聊
-        if(choice==1){
+        else if(choice==1){
             cout<<"请输入对方的用户名:";
             string target_name,content;
             cin>>target_name;
@@ -156,6 +170,19 @@ void client::HandleClient(int conn){
             send(sock,sendstr.c_str(),sendstr.length(),0);//先向服务器发送目标用户、源用户
             cout<<"请输入你想说的话(输入exit退出)：\n";
             thread t1(client::SendMsg,conn); //创建发送线程
+            thread t2(client::RecvMsg,conn);//创建接收线程
+            t1.join();
+            t2.join();
+        }
+        //群聊
+        else if(choice==2){
+            cout<<"请输入群号:";
+            int num;
+            cin>>num;
+            string sendstr("group:"+to_string(num));
+            send(sock,sendstr.c_str(),sendstr.length(),0);
+            cout<<"请输入你想说的话(输入exit退出)：\n";
+            thread t1(client::SendMsg,-conn); //创建发送线程，传入负数，和私聊区分开
             thread t2(client::RecvMsg,conn);//创建接收线程
             t1.join();
             t2.join();

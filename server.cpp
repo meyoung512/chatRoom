@@ -3,6 +3,8 @@
 vector<bool> server::sock_arr(10000,false);
 unordered_map<string,int> server::name_sock_map;
 pthread_mutex_t server::name_sock_mutx;
+unordered_map<int,set<int> > server::group_map;
+pthread_mutex_t server::group_mutx;
 
 server::server(int port,string ip):server_port(port),server_ip(ip){
     pthread_mutex_init(&name_sock_mutx,NULL);
@@ -72,7 +74,15 @@ void server::run(){
 // }
 
 void server::RecvMsg(int conn){
-    tuple<bool,string,string,int> info;
+    tuple<bool,string,string,int,int> info;
+    /*
+    元组类型，四个成员分别为if_login、login_name、target_name、target_conn
+    bool if_login;//记录当前服务对象是否成功登录
+    string login_name;//记录当前服务对象的名字
+    string target_name;//记录目标对象的名字
+    int target_conn;//目标对象的套接字描述符
+    int group_num;//记录所处群号
+    */
     get<0>(info)=false;
     get<3>(info)=-1;
     char buffer[1000];
@@ -98,7 +108,7 @@ void server::RecvMsg(int conn){
     }
 }
 
-void server::HandleRequest(int conn,string str,tuple<bool,string,string,int> &info){
+void server::HandleRequest(int conn,string str,tuple<bool,string,string,int,int> &info){
     char buffer[1000];
     string name,pass;
     //把参数提出来，方便操作
@@ -106,6 +116,7 @@ void server::HandleRequest(int conn,string str,tuple<bool,string,string,int> &in
     string login_name=get<1>(info);//记录当前服务对象的名字
     string target_name=get<2>(info);//记录目标对象的名字
     int target_conn=get<3>(info);//目标对象的套接字描述符
+    int group_num=get<4>(info);
 
     //连接MYSQL数据库
     MYSQL *con=mysql_init(NULL);
@@ -201,10 +212,31 @@ void server::HandleRequest(int conn,string str,tuple<bool,string,string,int> &in
         send_str="["+login_name+"]:"+send_str;
         send(target_conn,send_str.c_str(),send_str.length(),0);
     }
-
+    //绑定群聊号
+    else if(str.find("group:")!=str.npos){
+        string recv_str(str);
+        string num_str=recv_str.substr(6);
+        group_num=stoi(num_str);
+        cout<<"用户"<<login_name<<"绑定群聊号为："<<num_str<<endl;
+        pthread_mutex_lock(&group_mutx);//上锁
+        group_map[group_num].insert(conn);
+        pthread_mutex_unlock(&group_mutx);//解锁
+    }
+    //广播群聊信息
+    else if(str.find("gr_message:")!=str.npos){
+        string send_str(str);
+        send_str=send_str.substr(11);
+        send_str="["+login_name+"]:"+send_str;
+        cout<<"群聊信息："<<send_str<<endl;
+        for(auto i:group_map[group_num]){
+            if(i!=conn)
+                send(i,send_str.c_str(),send_str.length(),0);
+        }
+    }
     //更新实参
     get<0>(info)=if_login;//记录当前服务对象是否成功登录
     get<1>(info)=login_name;//记录当前服务对象的名字
     get<2>(info)=target_name;//记录目标对象的名字
     get<3>(info)=target_conn;//目标对象的套接字描述符
+    get<4>(info)=group_num;//记录所处群号
 }

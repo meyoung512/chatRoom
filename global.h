@@ -19,6 +19,8 @@
 #include <pthread.h>
 #include <set>
 #include<tuple>
+#include<hiredis/hiredis.h>
+#include<fstream>
 
 
 using namespace std;

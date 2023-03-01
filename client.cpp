@@ -81,14 +81,38 @@ void client::HandleClient(int conn){
     bool if_login=false;//记录是否登录成功
     string login_name;//记录成功登录的用户名
 
-    cout<<" ------------------\n";
-    cout<<"|                  |\n";
-    cout<<"| 请输入你要的选项:|\n";
-    cout<<"|    0:退出        |\n";
-    cout<<"|    1:登录        |\n";
-    cout<<"|    2:注册        |\n";
-    cout<<"|                  |\n";
-    cout<<" ------------------ \n\n";
+    //发送本地cookie，并接收服务器答复，如果答复通过就不用登录
+    //先检查是否存在cookie文件
+    ifstream f("cookie.txt");
+    string cookie_str;
+    if(f.good()){
+        f>>cookie_str;
+        f.close();
+        cookie_str="cookie:"+cookie_str;
+        //将cookie发送到服务器
+        send(sock,cookie_str.c_str(),cookie_str.length()+1,0);
+        //接收服务器答复
+        char cookie_ans[100];
+        memset(cookie_ans,0,sizeof(cookie_ans));
+        recv(sock,cookie_ans,sizeof(cookie_ans),0);
+        //判断服务器答复是否通过
+        string ans_str(cookie_ans);
+        if(ans_str!="NULL"){//redis查询到了cookie，通过
+            if_login=true;
+            login_name=ans_str;
+        }
+    }
+
+    if(!if_login){
+        cout<<" ------------------\n";
+        cout<<"|                  |\n";
+        cout<<"| 请输入你要的选项:|\n";
+        cout<<"|    0:退出        |\n";
+        cout<<"|    1:登录        |\n";
+        cout<<"|    2:注册        |\n";
+        cout<<"|                  |\n";
+        cout<<" ------------------ \n\n";
+    }
 
     //开始处理注册、登录事件
     while(1){
@@ -136,6 +160,11 @@ void client::HandleClient(int conn){
                 if(recv_str.substr(0,2)=="ok"){
                     if_login=true;
                     login_name=name;
+
+                    string tmpstr=recv_str.substr(2);
+                    tmpstr="cat > cookie.txt <<end \n"+tmpstr+"\nend";
+                    system(tmpstr.c_str());
+                    
                     cout<<"登录成功\n\n";
                     break;
                 }

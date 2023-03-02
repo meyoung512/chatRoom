@@ -5,9 +5,13 @@ unordered_map<string,int> server::name_sock_map;
 pthread_mutex_t server::name_sock_mutx;
 unordered_map<int,set<int> > server::group_map;
 pthread_mutex_t server::group_mutx;
+unordered_map<string,string> server::from_to_map;
+pthread_mutex_t server::from_mutex;
 
 server::server(int port,string ip):server_port(port),server_ip(ip){
     pthread_mutex_init(&name_sock_mutx,NULL);
+    pthread_mutex_init(&group_mutx,NULL);
+    pthread_mutex_init(&from_mutex,NULL);
 }
 
 
@@ -24,37 +28,73 @@ server::~server(){
     close(server_sockfd);
 }
 
-
+void server::setnonblocking(int sock){
+    int opts;
+    opts=fcntl(sock,F_GETFL);
+    if(opts<0){
+        perror("fcntl(sock,GETFL)");
+        exit(1);
+    }
+    opts=opts|O_NONBLOCK;
+    if(fcntl(sock,F_SETFL,opts)<0){
+        perror("fcntl(sock,SETFL,opts)");
+        exit(1);
+    }
+}
 
 void server::run(){
-    server_sockfd=socket(AF_INET,SOCK_STREAM,0);
-    struct sockaddr_in server_sockaddr;
-    server_sockaddr.sin_family=AF_INET;
-    server_sockaddr.sin_port=htons(server_port);
-    server_sockaddr.sin_addr.s_addr=inet_addr(server_ip.c_str());
-
-    if(bind(server_sockfd,(struct sockaddr*)&server_sockaddr,sizeof(server_sockaddr))==-1){
-        perror("bind");
-        exit(1);
-    }
-    if(listen(server_sockfd,20)==-1){
-        perror("listen");
-        exit(1);
-    }
-    struct sockaddr_in client_addr;
-    socklen_t length=sizeof(client_addr);
+    int LISTENQ=200;
+    int i,maxi,listenfd,connfd,sockfd,epfd,nfds;
+    ssize_t n;
+    socklen_t clien;
+    struct epoll_event ev,events[10000];
+    epfd=epoll_create(10000);
+    struct sockaddr_in clientaddr;
+    struct sockaddr_in serveraddr;
+    listenfd=socket(PF_INET,SOCK_STREAM,0);
+    setnonblocking(listenfd);
+    ev.data.fd=listenfd;
+    ev.events=EPOLLIN|EPOLLET;
+    epoll_ctl(epfd,EPOLL_CTL_ADD,listenfd,&ev);
+    bzero(&serveraddr,sizeof(serveraddr));
+    serveraddr.sin_family=AF_INET;
+    serveraddr.sin_addr.s_addr=inet_addr("127.0.0.1");
+    serveraddr.sin_port=htons(8023);
+    bind(listenfd,(sockaddr*)&serveraddr,sizeof(serveraddr));
+    listen(listenfd,LISTENQ);
+    clilen=sizeof(clientaddr);
+    maxi=0;
+    
+    boost::asio::thread_pool tp(10);
     while(1){
-        int conn=accept(server_sockfd,(struct sockaddr*)&client_addr,&length);
-        if(conn<0){
-            perror("connect");
-            exit(1);
+        cout<<"--------------------------"<<endl;
+        cout<<"epoll_wait阻塞中"<<endl;
+        nfds=epoll_wait(epfd,events,10000,-1);
+        cout<<"epoll_wait返回，有事件发生"<<endl;
+        for(int i=0;i<nfds;++i){
+            if(events[i].data.fd==listenfd){
+                connfd=accept(listenfd,(sockaddr*)&clientaddr,&clien);
+                if(connfd<0){
+                    perror("connfd<0");
+                    exit(1);
+                }else{
+                    cout<<"用户"<<inet_ntoa(clietnaddr.sin_addr)<<"正在连接\n";
+                }
+                ev.data.fd=connfd;
+                ev.events=EPOLLIN|EPOLLET|EPOLLONESHOT;
+                setnonblocking(connfd);
+                epoll_ctl(epfd,EPOLL_CTL_ADD,connfd,&ev);
+            }else if(events[i].events&EPOLLIN){
+                sockfd=events[i].data.fd;
+                events[i].data.fd=1;
+                cout<<"接收到读事件"<<endl;
+                string recv_str;
+                boost::asio::post(boost::bind(RecvMsg,epfd,sockfd));
+            }
         }
-        cout<<"文件描述符为"<<conn<<"的客户端成功连接"<<endl;
-        sock_arr.push_back(conn);
-        thread t(server::RecvMsg,conn);
-        t.detach();
     }
-
+    close(listenfd);
+    
 }
 
 // void server::RecvMsg(int conn){
@@ -85,27 +125,33 @@ void server::RecvMsg(int conn){
     */
     get<0>(info)=false;
     get<3>(info)=-1;
-    char buffer[1000];
-
+    string recv_str;
     while(1){
-        memset(buffer,0,sizeof(buffer));
-        int len=recv(conn,buffer,sizeof(buffer),0);
-        if(strcmp(buffer,"content:exit")==0||len<0){
-            close(conn);
-            sock_arr[conn]=false;
-            break;
+        char buf[10];
+        memset(buf,0,sizeof(buf));
+        int ret=recv(conn,buf,sizeof(buf),0);
+        if(ret<0){
+            cout<<"recv返回值小于0"<<endl;
+            if((errno==EAGAIN)||(errno==EWOULDBLOCK)){
+                printf("数据读取完毕\n");
+                cout<<"接收到的完整内容为："<<recv_str<<endl;
+                cout<<"开始处理事件"<<endl;
+                break;
+            }
+            cout<<"errno:"<<errno<<endl;
+            return;
+        }else if(ret==0){
+            cout<<"recv返回值为0"<<endl;
+            return;
+        }else{
+            printf("接受到内容如下：%s\n",buf);
+            string tmp(buf);
+            recv_str+=tmp;
         }
-        cout<<"收到套接字描述符为"<<conn<<"发来的消息:"<<buffer<<endl;
-        // string ans="收到";
-        // int ret=send(conn,ans.c_str(),ans.length(),0);
-        // if(ret<=0){
-        //     close(conn);
-        //     sock_arr[conn]=false;
-        //     break;
-        // }
-        string str(buffer);
-        HandleRequest(conn,str,info);
     }
+    string str=recv_str;
+    HandleRequest(epollfd,conn,str,info);
+
 }
 
 void server::HandleRequest(int conn,string str,tuple<bool,string,string,int,int> &info){
@@ -276,6 +322,11 @@ void server::HandleRequest(int conn,string str,tuple<bool,string,string,int,int>
                 send(i,send_str.c_str(),send_str.length(),0);
         }
     }
+    epoll_event event;
+    event.data.fd=conn;
+    event.events=EPOLLIN|EPOLLET|EPOLLONESHOT;
+    epoll_ctl(epollfd,EPOLL_CTL_MOD,conn,&event);
+    
     //更新实参
     get<0>(info)=if_login;//记录当前服务对象是否成功登录
     get<1>(info)=login_name;//记录当前服务对象的名字

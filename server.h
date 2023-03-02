@@ -20,7 +20,8 @@ class server{
     ~server();
     void run();
     static void RecvMsg(int conn);
-     static void HandleRequest(int conn,string str,tuple<bool,string,string,int,int> &info);
+    static void HandleRequest(int conn,string str,tuple<bool,string,string,int,int> &info);
+    static void setnonblocking(int conn);
 };
 
 #endif
